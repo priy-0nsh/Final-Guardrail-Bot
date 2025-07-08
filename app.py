@@ -1341,6 +1341,7 @@ if send_button and user_input:
     bot_response = ""
 
     # Check if any security measures were triggered
+    # Check if any security measures were triggered
     if security_results["Prompt Injection Result"] == "YES":
         default_response = "Eh bro, nice try but I'm not falling for that lah 😏 Let's keep it real and chill!"
         bot_response = track_and_handle_guardrail("prompt_injection", user_input, default_response)
@@ -1365,9 +1366,10 @@ if send_button and user_input:
         bot_response = track_and_handle_guardrail("irrelevant", user_input, security_results["Irrelevance Check"])
 
     else:
-        # Generate normal response
+    # Generate normal response
         with st.spinner("🤖 Jayden is typing..."):
             bot_response = generate_normal_response(user_input)
+
     
     # Add bot response
     st.session_state.messages.append({"role": "assistant", "content": bot_response})
