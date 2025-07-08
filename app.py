@@ -1004,8 +1004,219 @@ def generate_topic_steering_response(guardrail_type, user_input, trigger_count):
     except Exception as e:
         return "Aiyo bro, let's just chat about something fun lah 😅 What's your favorite Singapore food?"
 
+
+# ==== ADD THESE NEW FUNCTIONS TO YOUR CODE ====
+
+def extract_conversation_context(messages, max_messages=10):
+    """Extract relevant context from previous conversations"""
+    if not messages:
+        return ""
+    
+    # Get recent messages (excluding current one)
+    recent_messages = messages[-max_messages:]
+    
+    # Build conversation context
+    context_parts = []
+    topics_mentioned = set()
+    
+    for msg in recent_messages:
+        if msg["role"] == "user":
+            content = msg["content"].lower()
+            
+            # Extract topics mentioned
+            if any(word in content for word in ["food", "makan", "chicken rice", "laksa", "mala", "hawker"]):
+                topics_mentioned.add("food")
+            if any(word in content for word in ["game", "gaming", "valorant", "ml", "mobile legends", "fifa"]):
+                topics_mentioned.add("gaming")
+            if any(word in content for word in ["work", "school", "study", "exam", "assignment"]):
+                topics_mentioned.add("work_study")
+            if any(word in content for word in ["weekend", "holiday", "plan", "going out"]):
+                topics_mentioned.add("leisure")
+            if any(word in content for word in ["friend", "relationship", "dating", "crush"]):
+                topics_mentioned.add("relationships")
+            if any(word in content for word in ["singapore", "sg", "sengkang", "woodlands", "mrt", "hdb"]):
+                topics_mentioned.add("singapore")
+            
+            context_parts.append(f"User: {msg['content']}")
+        else:
+            context_parts.append(f"You: {msg['content']}")
+    
+    conversation_context = "\n".join(context_parts[-6:])  # Last 6 messages
+    topics_list = list(topics_mentioned)
+    
+    return {
+        "conversation_context": conversation_context,
+        "topics_mentioned": topics_list,
+        "message_count": len(recent_messages)
+    }
+
+def find_best_redirect_topic(context_data, guardrail_type):
+    """Find the best topic to redirect to based on conversation history"""
+    
+    # Priority topics based on what user has shown interest in
+    if context_data["topics_mentioned"]:
+        # If user has talked about food, prioritize that
+        if "food" in context_data["topics_mentioned"]:
+            return "food"
+        # Gaming is usually a safe bet
+        elif "gaming" in context_data["topics_mentioned"]:
+            return "gaming"
+        # Singapore topics are always relevant
+        elif "singapore" in context_data["topics_mentioned"]:
+            return "singapore"
+        # Leisure activities
+        elif "leisure" in context_data["topics_mentioned"]:
+            return "leisure"
+        else:
+            return context_data["topics_mentioned"][0]
+    
+    # Default topics based on guardrail type if no context
+    default_topics = {
+        "legal": "food",
+        "criminal": "gaming", 
+        "mental_health": "food",
+        "garbage": "singapore",
+        "origin": "gaming",
+        "irrelevant": "food",
+        "prompt_injection": "singapore"
+    }
+    
+    return default_topics.get(guardrail_type, "food")
+
+def generate_memory_based_steering_response(guardrail_type, user_input, trigger_count, context_data):
+    """Generate context-aware topic steering responses"""
+    
+    best_topic = find_best_redirect_topic(context_data, guardrail_type)
+    
+    # Topic-specific steering suggestions
+    topic_suggestions = {
+        "food": [
+            "What's your go-to comfort food?",
+            "tried any good hawker food lately?",
+            "what's the best chicken rice you've had?",
+            "mala or laksa - which team you on?",
+            "what did you have for lunch today?"
+        ],
+        "gaming": [
+            "what games you playing lately?",
+            "Mobile Legends or Valorant?",
+            "got any gaming plans for the weekend?",
+            "which game you're obsessed with now?",
+            "any new games you wanna try?"
+        ],
+        "singapore": [
+            "which part of Singapore you from?",
+            "favorite MRT line and why?",
+            "best Singapore memories?",
+            "weekend plans around SG?",
+            "favorite neighborhood to hang out?"
+        ],
+        "leisure": [
+            "what you doing this weekend?",
+            "any fun plans coming up?",
+            "how do you usually chill?",
+            "what's your ideal weekend like?",
+            "got any hobbies you're into?"
+        ],
+        "relationships": [
+            "how's life treating you?",
+            "what's been the highlight of your week?",
+            "any exciting plans with friends?",
+            "what makes you happy these days?",
+            "how do you like to spend time with people?"
+        ]
+    }
+    
+    suggestions = topic_suggestions.get(best_topic, topic_suggestions["food"])
+    
+    # Build escalating responses based on trigger count and context
+    if trigger_count == 2:
+        # Gentle redirect with context
+        if context_data["topics_mentioned"]:
+            recent_topic = context_data["topics_mentioned"][0]
+            prompt = f"""
+            {user_defined_personality}
+            
+            Conversation context:
+            {context_data["conversation_context"]}
+            
+            Someone is asking about {guardrail_type} topics again: "{user_input}"
+            
+            You've already addressed this once. Now gently redirect using the conversation context. 
+            I noticed you were talking about {recent_topic} earlier - maybe steer back to that or ask: "{suggestions[0]}"
+            
+            Keep it natural and friendly, referencing your chat history.
+            """
+        else:
+            prompt = f"""
+            {user_defined_personality}
+            
+            Someone is asking about {guardrail_type} topics again: "{user_input}"
+            
+            You've already addressed this once. Now gently redirect by asking: "{suggestions[0]}"
+            Keep it casual and friendly.
+            """
+    
+    elif trigger_count == 3:
+        # More direct with context
+        prompt = f"""
+        {user_defined_personality}
+        
+        Conversation context:
+        {context_data["conversation_context"]}
+        
+        Someone keeps asking about {guardrail_type} topics: "{user_input}"
+        
+        You've already redirected them twice. Be more direct but still friendly. 
+        Reference your conversation history and firmly suggest talking about {best_topic} instead.
+        Maybe ask: "{suggestions[1]}" or "{suggestions[2]}"
+        
+        Show you remember what you've discussed before.
+        """
+    
+    elif trigger_count == 4:
+        # Firm but caring
+        prompt = f"""
+        {user_defined_personality}
+        
+        Conversation context:
+        {context_data["conversation_context"]}
+        
+        Someone is persistent with {guardrail_type} topics: "{user_input}"
+        
+        This is the third time you're redirecting them. Be firm but still caring.
+        Acknowledge the pattern, reference your conversation history, and strongly suggest 
+        they focus on {best_topic} topics instead. Ask: "{suggestions[3]}"
+        
+        Make it clear you've noticed the repetition.
+        """
+    
+    else:  # trigger_count >= 5
+        # Very direct
+        prompt = f"""
+        {user_defined_personality}
+        
+        Conversation context:
+        {context_data["conversation_context"]}
+        
+        Someone won't stop asking about {guardrail_type} topics: "{user_input}"
+        
+        You've redirected them multiple times already. Be very direct now.
+        Point out that you've said this several times, reference your conversation history,
+        and firmly insist on talking about {best_topic} instead. Ask: "{suggestions[4]}"
+        
+        Be direct but not mean - show you're trying to help them have a better conversation.
+        """
+    
+    try:
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        return f"Aiyo bro, let's talk about {best_topic} instead lah 😅 {suggestions[0]}"
+
+
 def track_and_handle_guardrail(guardrail_type, user_input, normal_response):
-    """Track guardrail triggers and return appropriate response"""
+    """Track guardrail triggers and return appropriate response with memory"""
     
     # Initialize counter for this guardrail type if not exists
     if guardrail_type not in st.session_state.guardrail_triggers:
@@ -1014,9 +1225,18 @@ def track_and_handle_guardrail(guardrail_type, user_input, normal_response):
     # Increment counter
     st.session_state.guardrail_triggers[guardrail_type] += 1
     
-    # If triggered more than once, use topic steering with escalating firmness
+    # If triggered more than once, use memory-based topic steering
     if st.session_state.guardrail_triggers[guardrail_type] > 1:
-        return generate_topic_steering_response(guardrail_type, user_input, st.session_state.guardrail_triggers[guardrail_type])
+        # Extract conversation context
+        context_data = extract_conversation_context(st.session_state.messages)
+        
+        # Generate memory-based steering response
+        return generate_memory_based_steering_response(
+            guardrail_type, 
+            user_input, 
+            st.session_state.guardrail_triggers[guardrail_type],
+            context_data
+        )
     else:
         return normal_response
 
@@ -1028,6 +1248,20 @@ st.markdown("""
     <p><em>Ready to chat about anything under the Singapore sun ☀️</em></p>
 </div>
 """, unsafe_allow_html=True)
+
+def display_memory_debug():
+    """Display memory and context information for debugging"""
+    if st.session_state.messages:
+        context_data = extract_conversation_context(st.session_state.messages)
+        
+        st.markdown("### 🧠 Memory Analysis")
+        st.markdown(f"**Messages in memory:** {context_data['message_count']}")
+        st.markdown(f"**Topics mentioned:** {', '.join(context_data['topics_mentioned']) if context_data['topics_mentioned'] else 'None'}")
+        
+        if st.session_state.guardrail_triggers:
+            st.markdown("### 🔄 Guardrail Triggers")
+            for guard_type, count in st.session_state.guardrail_triggers.items():
+                st.markdown(f"**{guard_type}:** {count}x")
 
 # Sidebar with security information
 with st.sidebar:
@@ -1080,6 +1314,8 @@ with st.sidebar:
     - 🎮 **Loves**: Gaming, food, memes
     - 🗣️ **Style**: Gen Z + Singlish vibes
     """)
+    if st.checkbox("Show Memory Debug"):
+        display_memory_debug()
 
 # Main chat interface
 col1, col2 = st.columns([3, 1])
